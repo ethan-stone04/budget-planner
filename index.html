@@ -4,10 +4,22 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>My Budget — 50/30/20 Planner</title>
+<script>
+  // Apply saved theme immediately to avoid a flash of the wrong colors.
+  (function () {
+    try {
+      var t = localStorage.getItem("myBudgetPlannerTheme") || "blue-black";
+      document.documentElement.setAttribute("data-theme", t);
+    } catch (e) {
+      document.documentElement.setAttribute("data-theme", "blue-black");
+    }
+  })();
+</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
-  :root {
-    /* Blue & black theme */
+  /* ===== Blue & Black theme (default) ===== */
+  :root,
+  :root[data-theme="blue-black"] {
     --bg: #05070d;            /* near-black with a blue undertone */
     --card: #0d1426;          /* deep navy */
     --card-alt: #111c33;      /* slightly lighter navy for contrast */
@@ -26,6 +38,52 @@
     --on-track-fg: #93c5fd;
     --over-bg: #3a0d10;
     --over-fg: #fecaca;
+  }
+
+  /* ===== Classic theme (the original look) ===== */
+  :root[data-theme="classic"] {
+    --bg: #f6f7fb;
+    --card: #ffffff;
+    --card-alt: #fafbfc;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --accent: #4f46e5;
+    --accent-soft: #eef2ff;
+    --needs: #3b82f6;
+    --wants: #f59e0b;
+    --savings: #10b981;
+    --danger: #ef4444;
+    --shadow: 0 4px 20px rgba(17, 24, 39, 0.06);
+    --input-bg: #ffffff;
+    --on-track-bg: #d1fae5;
+    --on-track-fg: #065f46;
+    --over-bg: #fee2e2;
+    --over-fg: #991b1b;
+  }
+
+  /* Classic theme follows the system's dark-mode preference, just like before */
+  @media (prefers-color-scheme: dark) {
+    :root[data-theme="classic"] {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --card-alt: #263449;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --border: #334155;
+      --accent: #818cf8;
+      --accent-soft: #312e81;
+      --needs: #60a5fa;
+      --wants: #fbbf24;
+      --savings: #34d399;
+      --danger: #f87171;
+      --shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+      --input-bg: #0f172a;
+      --on-track-bg: #064e3b;
+      --on-track-fg: #6ee7b7;
+      --over-bg: #7f1d1d;
+      --over-fg: #fecaca;
+    }
   }
 
   * { box-sizing: border-box; }
@@ -351,6 +409,7 @@
       </div>
     </div>
     <div class="actions">
+      <button class="secondary small" id="themeBtn" title="Switch theme">Theme: Blue &amp; Black</button>
       <button class="secondary small" id="exportBtn">Export CSV</button>
       <button class="secondary small" id="importBtn">Import CSV</button>
       <input type="file" id="importFile" accept=".csv,text/csv" style="display:none" />
@@ -452,11 +511,18 @@
 </div>
 
 <script>
-  // ===== Theme-aware Chart.js defaults (blue/black theme) =====
+  // ===== Chart.js defaults — pulled live from whichever theme is active =====
   const chartLoaded = typeof Chart !== "undefined";
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+  function applyChartTheme() {
+    if (!chartLoaded) return;
+    Chart.defaults.color = cssVar("--muted") || Chart.defaults.color;
+    Chart.defaults.borderColor = cssVar("--border") || Chart.defaults.borderColor;
+  }
   if (chartLoaded) {
-    Chart.defaults.color = "#8aa0c4";      // --muted
-    Chart.defaults.borderColor = "#1c2a44"; // --border
+    applyChartTheme();
   } else {
     console.warn("Chart.js failed to load — charts will be disabled, but the rest of the app will still work.");
   }
@@ -743,8 +809,14 @@
 
   function updateCharts(byCat, expenses) {
     if (!chartLoaded) return; // Charts unavailable — skip, rest of app still works.
+
+    // Pull the current theme's category colors live from CSS variables.
+    const cNeeds   = cssVar("--needs")   || "#3b82f6";
+    const cWants   = cssVar("--wants")   || "#f59e0b";
+    const cSavings = cssVar("--savings") || "#10b981";
+
     const pieData = [byCat.needs, byCat.wants, byCat.savings];
-    const colors = ['#60a5fa', '#93c5fd', '#1d4ed8']; // needs / wants / savings (blue family)
+    const colors = [cNeeds, cWants, cSavings];
 
     if (!pieChart) {
       pieChart = new Chart(document.getElementById("pieChart"), {
@@ -762,14 +834,15 @@
       });
     } else {
       pieChart.data.datasets[0].data = pieData;
+      pieChart.data.datasets[0].backgroundColor = colors;
       pieChart.update();
     }
 
     const labels = expenses.map(function (e) { return e.label || "(unnamed)"; });
     const data = expenses.map(function (e) { return e.amount || 0; });
     const bg = expenses.map(function (e) {
-      return e.category === 'needs' ? '#60a5fa' :
-             e.category === 'wants' ? '#93c5fd' : '#1d4ed8';
+      return e.category === 'needs' ? cNeeds :
+             e.category === 'wants' ? cWants : cSavings;
     });
 
     if (!barChart) {
@@ -815,6 +888,31 @@
       lastCarryInfo = null;
       save(); renderAll();
     }
+  });
+
+  // ===== Theme switching =====
+  const THEME_KEY = "myBudgetPlannerTheme";
+  const THEME_LABELS = {
+    "blue-black": "Theme: Blue & Black",
+    "classic":    "Theme: Classic"
+  };
+  function getTheme() {
+    const t = localStorage.getItem(THEME_KEY);
+    return (t === "classic" || t === "blue-black") ? t : "blue-black";
+  }
+  function setTheme(theme, repaint) {
+    document.documentElement.setAttribute("data-theme", theme);
+    try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+    const btn = document.getElementById("themeBtn");
+    if (btn) btn.textContent = THEME_LABELS[theme];
+    applyChartTheme();
+    if (repaint) refreshSummary(); // re-paint charts with the new palette
+  }
+  // Initialize button label on load (the attribute itself was set by the inline script in <head>).
+  // Don't repaint here — renderAll() runs below and handles the first render.
+  setTheme(getTheme(), false);
+  document.getElementById("themeBtn").addEventListener("click", function () {
+    setTheme(getTheme() === "blue-black" ? "classic" : "blue-black", true);
   });
 
   // ===== Month navigation (arrow buttons + keyboard arrows) =====
