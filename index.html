@@ -476,8 +476,13 @@
 <script>
   // ===== Theme-aware Chart.js defaults =====
   const darkMode = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-  Chart.defaults.color = darkMode ? "#cbd5e1" : "#475569";
-  Chart.defaults.borderColor = darkMode ? "#334155" : "#e5e7eb";
+  const chartLoaded = typeof Chart !== "undefined";
+  if (chartLoaded) {
+    Chart.defaults.color = darkMode ? "#cbd5e1" : "#475569";
+    Chart.defaults.borderColor = darkMode ? "#334155" : "#e5e7eb";
+  } else {
+    console.warn("Chart.js failed to load — charts will be disabled, but the rest of the app will still work.");
+  }
 
   // ===== Helpers =====
   function uid() { return Math.random().toString(36).slice(2, 10); }
@@ -647,4 +652,329 @@
       host.innerHTML = '<div class="empty">No expenses yet.</div>';
       return;
     }
-    data.exp
+    data.expenses.forEach(function (exp) {
+      if (exp.recurring === undefined) exp.recurring = true;
+      const row = document.createElement("div");
+      row.className = "row expense";
+      row.innerHTML =
+        '<input type="text" placeholder="Expense name" value="' + (exp.label || "") + '" />' +
+        '<select>' +
+          '<option value="needs" '   + (exp.category === 'needs'   ? 'selected' : '') + '>Need (50%)</option>' +
+          '<option value="wants" '   + (exp.category === 'wants'   ? 'selected' : '') + '>Want (30%)</option>' +
+          '<option value="savings" ' + (exp.category === 'savings' ? 'selected' : '') + '>Savings/Debt (20%)</option>' +
+        '</select>' +
+        '<input type="number" min="0" step="0.01" placeholder="Amount" value="' + (exp.amount || "") + '" />' +
+        '<button class="recurring-toggle ' + (exp.recurring ? 'active' : '') + '" title="Toggle whether this carries over to next month">Recurring</button>' +
+        '<button class="ghost" title="Remove">&#10005;</button>';
+      const labelIn = row.children[0], catIn = row.children[1], amtIn = row.children[2],
+            recBtn = row.children[3], delBtn = row.children[4];
+      labelIn.addEventListener("input", function (e) { exp.label = e.target.value; save(); });
+      catIn.addEventListener("change", function (e) { exp.category = e.target.value; save(); refreshSummary(); });
+      amtIn.addEventListener("input", function (e) { exp.amount = parseFloat(e.target.value) || 0; save(); refreshSummary(); });
+      recBtn.addEventListener("click", function () {
+        exp.recurring = !exp.recurring;
+        recBtn.classList.toggle("active", exp.recurring);
+        save();
+      });
+      delBtn.addEventListener("click", function () {
+        state.months[state.currentMonth].expenses = data.expenses.filter(function (x) { return x.id !== exp.id; });
+        save(); renderExpenses(); refreshSummary();
+      });
+      host.appendChild(row);
+    });
+  }
+
+  function renderGoals() {
+    const host = document.getElementById("goalList");
+    host.innerHTML = "";
+    if (!state.goals) state.goals = [];
+    if (!state.goals.length) {
+      host.innerHTML = '<div class="empty">No savings goals yet.</div>';
+      return;
+    }
+    state.goals.forEach(function (g) {
+      const pct = g.target > 0 ? Math.min(100, (g.saved / g.target) * 100) : 0;
+      const div = document.createElement("div");
+      div.className = "goal";
+      div.innerHTML =
+        '<div class="goal-head">' +
+          '<input type="text" value="' + (g.label || "") + '" style="border:none; padding:0; font-size:15px; width:50%; background:transparent" />' +
+          '<button class="ghost" title="Remove">&#10005;</button>' +
+        '</div>' +
+        '<div class="goal-meta">Saved <strong>' + fmt(g.saved) + '</strong> of <strong>' + fmt(g.target) + '</strong> (' + pct.toFixed(0) + '%)</div>' +
+        '<div class="progress" style="margin-top:8px"><div style="background:var(--savings); width:' + pct + '%"></div></div>' +
+        '<div class="row" style="grid-template-columns: 1fr 1fr; margin-top:10px">' +
+          '<input type="number" min="0" step="0.01" placeholder="Target amount" value="' + (g.target || "") + '" />' +
+          '<input type="number" min="0" step="0.01" placeholder="Saved so far" value="' + (g.saved || "") + '" />' +
+        '</div>';
+      const labelIn = div.querySelector(".goal-head input");
+      const delBtn = div.querySelector(".goal-head button");
+      const inputs = div.querySelectorAll(".row input");
+      const targetIn = inputs[0], savedIn = inputs[1];
+      labelIn.addEventListener("input", function (e) { g.label = e.target.value; save(); });
+      targetIn.addEventListener("input", function (e) { g.target = parseFloat(e.target.value) || 0; save(); renderGoals(); });
+      savedIn.addEventListener("input", function (e) { g.saved = parseFloat(e.target.value) || 0; save(); renderGoals(); });
+      delBtn.addEventListener("click", function () {
+        state.goals = state.goals.filter(function (x) { return x.id !== g.id; });
+        save(); renderGoals();
+      });
+      host.appendChild(div);
+    });
+  }
+
+  // ===== Summary / Charts =====
+  let pieChart, barChart;
+  function refreshSummary() {
+    const data = currentData();
+    const income = data.incomes.reduce(function (s, i) { return s + (i.amount || 0); }, 0);
+    const byCat = { needs: 0, wants: 0, savings: 0 };
+    data.expenses.forEach(function (e) { byCat[e.category] = (byCat[e.category] || 0) + (e.amount || 0); });
+    const totalExp = byCat.needs + byCat.wants + byCat.savings;
+    const remaining = income - totalExp;
+
+    document.getElementById("totalIncome").textContent = fmt(income);
+    document.getElementById("totalExpenses").textContent = fmt(totalExp);
+    document.getElementById("remaining").textContent = fmt(remaining);
+    document.getElementById("expensePct").textContent = income > 0
+      ? ((totalExp/income)*100).toFixed(0) + "% of income"
+      : "0% of income";
+    document.getElementById("remainingNote").textContent = remaining < 0
+      ? "Over budget \u2014 reduce expenses"
+      : remaining === 0 ? "Fully allocated" : "Unallocated";
+    document.getElementById("remaining").style.color = remaining < 0 ? "var(--danger)" : "var(--text)";
+
+    const targets = { needs: income * 0.5, wants: income * 0.3, savings: income * 0.2 };
+
+    function setBar(key, barId, infoId) {
+      const spent = byCat[key];
+      const target = targets[key];
+      const pct = target > 0 ? Math.min(200, (spent / target) * 100) : 0;
+      document.getElementById(barId).style.width = Math.min(100, pct) + "%";
+      document.getElementById(barId).style.background =
+        spent > target && target > 0 ? "var(--danger)" : "var(--" + key + ")";
+      const tag = spent > target && target > 0
+        ? '<span class="target-tag over">Over by ' + fmt(spent-target) + '</span>'
+        : '<span class="target-tag on-track">On track</span>';
+      document.getElementById(infoId).innerHTML = fmt(spent) + " / " + fmt(target) + " " + (income > 0 ? tag : "");
+    }
+    setBar("needs", "needsBar", "needsInfo");
+    setBar("wants", "wantsBar", "wantsInfo");
+    setBar("savings", "savingsBar", "savingsInfo");
+
+    updateCharts(byCat, data.expenses);
+  }
+
+  function updateCharts(byCat, expenses) {
+    if (!chartLoaded) return; // Charts unavailable — skip, rest of app still works.
+    const pieData = [byCat.needs, byCat.wants, byCat.savings];
+    const colors = ['#3b82f6', '#f59e0b', '#10b981'];
+
+    if (!pieChart) {
+      pieChart = new Chart(document.getElementById("pieChart"), {
+        type: 'doughnut',
+        data: { labels: ['Needs', 'Wants', 'Savings'], datasets: [{ data: pieData, backgroundColor: colors, borderWidth: 0 }] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: function (c) { return c.label + ": " + fmt(c.parsed); } } }
+          },
+          cutout: '62%'
+        }
+      });
+    } else {
+      pieChart.data.datasets[0].data = pieData;
+      pieChart.update();
+    }
+
+    const labels = expenses.map(function (e) { return e.label || "(unnamed)"; });
+    const data = expenses.map(function (e) { return e.amount || 0; });
+    const bg = expenses.map(function (e) {
+      return e.category === 'needs' ? '#3b82f6' :
+             e.category === 'wants' ? '#f59e0b' : '#10b981';
+    });
+
+    if (!barChart) {
+      barChart = new Chart(document.getElementById("barChart"), {
+        type: 'bar',
+        data: { labels: labels, datasets: [{ data: data, backgroundColor: bg, borderRadius: 6 }] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: function (c) { return fmt(c.parsed.y); } } } },
+          scales: {
+            y: { ticks: { callback: function (v) { return "$" + v; } } },
+            x: { ticks: { autoSkip: false, maxRotation: 40, minRotation: 0 } }
+          }
+        }
+      });
+    } else {
+      barChart.data.labels = labels;
+      barChart.data.datasets[0].data = data;
+      barChart.data.datasets[0].backgroundColor = bg;
+      barChart.update();
+    }
+  }
+
+  // ===== Buttons =====
+  document.getElementById("addIncome").addEventListener("click", function () {
+    currentData().incomes.push({ id: uid(), label: "", amount: 0, recurring: true });
+    save(); renderIncome();
+  });
+  document.getElementById("addExpense").addEventListener("click", function () {
+    currentData().expenses.push({ id: uid(), label: "", category: "needs", amount: 0, recurring: true });
+    save(); renderExpenses(); refreshSummary();
+  });
+  document.getElementById("addGoal").addEventListener("click", function () {
+    if (!state.goals) state.goals = [];
+    state.goals.push({ id: uid(), label: "New goal", target: 0, saved: 0 });
+    save(); renderGoals();
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", function () {
+    if (confirm("Reset all data? This will erase every month and every goal. This cannot be undone.")) {
+      state = makeDefaultState();
+      lastCarryInfo = null;
+      save(); renderAll();
+    }
+  });
+
+  // ===== Month navigation (arrow buttons + keyboard arrows) =====
+  document.getElementById("prevMonth").addEventListener("click", function () {
+    switchToMonth(shiftMonth(state.currentMonth, -1));
+  });
+  document.getElementById("nextMonth").addEventListener("click", function () {
+    switchToMonth(shiftMonth(state.currentMonth, +1));
+  });
+  document.getElementById("monthPicker").addEventListener("change", function (e) {
+    if (e.target.value) switchToMonth(e.target.value);
+  });
+  // Keyboard: Left/Right arrows move months, unless focus is in an input/select/textarea
+  document.addEventListener("keydown", function (e) {
+    const t = e.target;
+    const tag = t && t.tagName ? t.tagName.toLowerCase() : "";
+    if (tag === "input" || tag === "select" || tag === "textarea" || (t && t.isContentEditable)) return;
+    if (e.key === "ArrowLeft")  { e.preventDefault(); switchToMonth(shiftMonth(state.currentMonth, -1)); }
+    if (e.key === "ArrowRight") { e.preventDefault(); switchToMonth(shiftMonth(state.currentMonth, +1)); }
+  });
+
+  // ===== CSV =====
+  function csvEscape(val) {
+    const s = String(val == null ? "" : val);
+    if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+  function toCSV() {
+    const rows = [["type", "month", "label", "category", "amount", "recurring", "target", "saved"]];
+    sortedMonthKeys().forEach(function (m) {
+      state.months[m].incomes.forEach(function (i) {
+        rows.push(["income", m, i.label || "", "", i.amount || 0, i.recurring ? "true" : "false", "", ""]);
+      });
+      state.months[m].expenses.forEach(function (e) {
+        rows.push(["expense", m, e.label || "", e.category || "", e.amount || 0, e.recurring ? "true" : "false", "", ""]);
+      });
+    });
+    (state.goals || []).forEach(function (g) {
+      rows.push(["goal", "", g.label || "", "", "", "", g.target || 0, g.saved || 0]);
+    });
+    return rows.map(function (r) { return r.map(csvEscape).join(","); }).join("\n");
+  }
+  function parseCSV(text) {
+    const rows = [];
+    let row = [], field = "", inQuotes = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (inQuotes) {
+        if (c === '"') {
+          if (text[i+1] === '"') { field += '"'; i++; }
+          else inQuotes = false;
+        } else field += c;
+      } else {
+        if (c === '"') inQuotes = true;
+        else if (c === ',') { row.push(field); field = ""; }
+        else if (c === '\n' || c === '\r') {
+          if (c === '\r' && text[i+1] === '\n') i++;
+          row.push(field); rows.push(row); row = []; field = "";
+        } else field += c;
+      }
+    }
+    if (field.length || row.length) { row.push(field); rows.push(row); }
+    return rows.filter(function (r) { return r.length && r.some(function (v) { return v !== ""; }); });
+  }
+
+  document.getElementById("exportBtn").addEventListener("click", function () {
+    const blob = new Blob([toCSV()], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "my-budget.csv"; a.click();
+    URL.revokeObjectURL(url);
+  });
+  document.getElementById("importBtn").addEventListener("click", function () {
+    document.getElementById("importFile").click();
+  });
+  document.getElementById("importFile").addEventListener("change", function (e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function (ev) {
+      try {
+        const rows = parseCSV(ev.target.result);
+        if (rows.length < 2) throw new Error("CSV is empty");
+        const header = rows[0].map(function (h) { return h.trim().toLowerCase(); });
+        const idx = {
+          type: header.indexOf("type"), month: header.indexOf("month"),
+          label: header.indexOf("label"), category: header.indexOf("category"),
+          amount: header.indexOf("amount"), recurring: header.indexOf("recurring"),
+          target: header.indexOf("target"), saved: header.indexOf("saved")
+        };
+        if (idx.type === -1 || idx.label === -1) throw new Error("Missing required columns (type, label)");
+        const nextMonths = {}; const nextGoals = []; const fallbackMonth = todayKey();
+        for (let r = 1; r < rows.length; r++) {
+          const row = rows[r];
+          const type = (row[idx.type] || "").trim().toLowerCase();
+          const label = (row[idx.label] || "").trim();
+          const monthKey = (idx.month !== -1 && row[idx.month]) ? row[idx.month].trim() : fallbackMonth;
+          const recurring = idx.recurring !== -1
+            ? String(row[idx.recurring] == null ? "true" : row[idx.recurring]).trim().toLowerCase() !== "false"
+            : true;
+          if (type === "income" || type === "expense") {
+            if (!nextMonths[monthKey]) nextMonths[monthKey] = { incomes: [], expenses: [] };
+          }
+          if (type === "income") {
+            nextMonths[monthKey].incomes.push({ id: uid(), label: label, amount: parseFloat(row[idx.amount]) || 0, recurring: recurring });
+          } else if (type === "expense") {
+            let cat = (row[idx.category] || "needs").trim().toLowerCase();
+            if (["needs","wants","savings"].indexOf(cat) === -1) cat = "needs";
+            nextMonths[monthKey].expenses.push({ id: uid(), label: label, category: cat, amount: parseFloat(row[idx.amount]) || 0, recurring: recurring });
+          } else if (type === "goal") {
+            nextGoals.push({ id: uid(), label: label, target: parseFloat(row[idx.target]) || 0, saved: parseFloat(row[idx.saved]) || 0 });
+          }
+        }
+        const keys = Object.keys(nextMonths).sort();
+        if (!keys.length) nextMonths[fallbackMonth] = { incomes: [], expenses: [] };
+        state = {
+          schemaVersion: 2,
+          currentMonth: keys.length ? keys[keys.length-1] : fallbackMonth,
+          months: nextMonths, goals: nextGoals
+        };
+        lastCarryInfo = null; save(); renderAll();
+      } catch (err) { alert("Could not import CSV: " + err.message); }
+      finally { e.target.value = ""; }
+    };
+    reader.readAsText(file);
+  });
+
+  function renderAll() {
+    renderMonthNav();
+    renderIncome();
+    renderExpenses();
+    renderGoals();
+    refreshSummary();
+  }
+
+  ensureMonth(state.currentMonth);
+  renderAll();
+</script>
+</body>
+</html>
