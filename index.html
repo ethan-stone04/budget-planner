@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>My Budget — 50/30/20 Planner</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7fb;
+    --card: #ffffff;
+    --card-alt: #fafbfc;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --accent: #4f46e5;
+    --accent-soft: #eef2ff;
+    --needs: #3b82f6;
+    --wants: #f59e0b;
+    --savings: #10b981;
+    --danger: #ef4444;
+    --shadow: 0 4px 20px rgba(17, 24, 39, 0.06);
+    --input-bg: #ffffff;
+    --on-track-bg: #d1fae5;
+    --on-track-fg: #065f46;
+    --over-bg: #fee2e2;
+    --over-fg: #991b1b;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --card-alt: #263449;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --border: #334155;
+      --accent: #818cf8;
+      --accent-soft: #312e81;
+      --needs: #60a5fa;
+      --wants: #fbbf24;
+      --savings: #34d399;
+      --danger: #f87171;
+      --shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+      --input-bg: #0f172a;
+      --on-track-bg: #064e3b;
+      --on-track-fg: #6ee7b7;
+      --over-bg: #7f1d1d;
+      --over-fg: #fecaca;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 32px 20px 64px; }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  header h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--card);
+    border-radius: 14px;
+    padding: 22px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border);
+  }
+  .card h2 {
+    margin: 0 0 16px 0;
+    font-size: 18px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr auto auto;
+    gap: 8px;
+    margin-bottom: 8px;
+    align-items: center;
+  }
+  .row.expense { grid-template-columns: 1.5fr 1fr 1fr auto auto; }
+
+  input, select, button {
+    font-family: inherit;
+    font-size: 14px;
+    padding: 9px 11px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--input-bg);
+    color: var(--text);
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input:focus, select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+  }
+
+  button {
+    cursor: pointer;
+    background: var(--accent);
+    color: white;
+    border: none;
+    font-weight: 500;
+  }
+  button:hover { filter: brightness(1.07); }
+  button.secondary {
+    background: var(--input-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  button.ghost {
+    background: transparent;
+    color: var(--muted);
+    padding: 6px 10px;
+    border: none;
+  }
+  button.ghost:hover { color: var(--danger); }
+  button.small { padding: 6px 10px; font-size: 13px; }
+
+  .add-btn {
+    width: 100%;
+    margin-top: 8px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 14px; }
+  .stat {
+    padding: 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--card-alt);
+  }
+  .stat .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+  .stat .value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+  .stat .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .progress {
+    height: 8px;
+    background: var(--border);
+    border-radius: 99px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+  .progress > div { height: 100%; transition: width .3s; }
+
+  .pill-needs { color: var(--needs); }
+  .pill-wants { color: var(--wants); }
+  .pill-savings { color: var(--savings); }
+
+  .legend {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 10px;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 99px; display: inline-block; }
+
+  .target-tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 99px;
+    margin-left: 8px;
+    font-weight: 600;
+  }
+  .on-track { background: var(--on-track-bg); color: var(--on-track-fg); }
+  .over { background: var(--over-bg); color: var(--over-fg); }
+
+  .chart-wrap { position: relative; height: 280px; }
+
+  .goal {
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 10px;
+  }
+  .goal-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 600;
+  }
+  .goal-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .footer-note {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 32px;
+  }
+
+  .empty {
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+    padding: 12px 0;
+    font-style: italic;
+  }
+
+  details summary {
+    cursor: pointer;
+    color: var(--accent);
+    font-size: 13px;
+    margin-top: 10px;
+  }
+
+  .month-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .month-nav input[type="month"] {
+    padding: 6px 10px;
+    font-size: 13px;
+    min-width: 160px;
+  }
+  .month-nav .nav-btn {
+    background: var(--input-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    font-size: 14px;
+    line-height: 1;
+  }
+  .month-note { color: var(--muted); font-size: 12px; margin-left: 4px; }
+
+  .recurring-toggle {
+    font-size: 11px;
+    padding: 5px 10px;
+    border-radius: 99px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-weight: 600;
+    white-space: nowrap;
+    letter-spacing: 0.02em;
+  }
+  .recurring-toggle.active {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-color: transparent;
+  }
+
+  /* ===== Mobile (phones) ===== */
+  @media (max-width: 640px) {
+    .container { padding: 16px 12px 40px; }
+
+    header {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    header h1 { font-size: 22px; }
+    header p { font-size: 13px; }
+    .actions { justify-content: flex-start; flex-wrap: wrap; }
+    .actions button { flex: 1 1 auto; min-width: 100px; }
+
+    .card { padding: 16px; border-radius: 12px; }
+    .card h2 { font-size: 16px; margin-bottom: 12px; }
+    .grid { gap: 14px; }
+
+    /* Summary stats: stack or pair up */
+    .summary-grid { grid-template-columns: 1fr; gap: 8px; }
+    .stat { padding: 12px; }
+    .stat .value { font-size: 20px; }
+
+    /* Income & expense rows become mini cards stacked vertically */
+    #incomeList .row,
+    #expenseList .row {
+      grid-template-columns: 1fr auto auto;
+      gap: 8px;
+      padding: 12px;
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-bottom: 10px;
+    }
+    #incomeList .row > input[type="text"],
+    #expenseList .row > input[type="text"] { grid-column: 1 / -1; }
+    #expenseList .row > select { grid-column: 1 / -1; }
+    #incomeList .row > input[type="number"],
+    #expenseList .row > input[type="number"] { grid-column: 1 / 2; }
+    #incomeList .row > .recurring-toggle,
+    #expenseList .row > .recurring-toggle {
+      grid-column: 2 / 3; align-self: center; justify-self: center;
+    }
+    #incomeList .row > .ghost,
+    #expenseList .row > .ghost {
+      grid-column: 3 / 4; align-self: center; justify-self: end;
+    }
+
+    /* Prevent iOS auto-zoom when focusing a text field */
+    input, select, button { font-size: 16px; }
+    .recurring-toggle { font-size: 12px; }
+    .card h2 .badge { font-size: 10px; }
+
+    /* Smaller charts so they don't dominate the screen */
+    .chart-wrap { height: 220px; }
+    .chart-wrap[style] { height: 200px !important; }
+
+    /* Month nav wraps gracefully */
+    .month-nav { gap: 4px; }
+    .month-nav input[type="month"] { flex: 1 1 auto; min-width: 0; }
+    .month-note { flex-basis: 100%; margin-left: 0; margin-top: 4px; }
+
+    .goal { padding: 14px; }
+    .footer-note { margin-top: 20px; font-size: 11px; }
+  }
+
+  /* ===== Extra-small phones ===== */
+  @media (max-width: 380px) {
+    header h1 { font-size: 20px; }
+    .actions button { flex: 1 1 100%; }
+    .stat .value { font-size: 18px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1>My Budget Planner</h1>
+      <p>Plan your money using the 50/30/20 rule — needs, wants, and savings.</p>
+      <div class="month-nav">
+        <button class="nav-btn" id="prevMonth" title="Previous month">&#9664;</button>
+        <input type="month" id="monthPicker" />
+        <button class="nav-btn" id="nextMonth" title="Next month">&#9654;</button>
+        <span class="month-note" id="monthNote"></span>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="secondary small" id="exportBtn">Export CSV</button>
+      <button class="secondary small" id="importBtn">Import CSV</button>
+      <input type="file" id="importFile" accept=".csv,text/csv" style="display:none" />
+      <button class="secondary small" id="resetBtn">Reset</button>
+    </div>
+  </header>
+
+  <!-- Summary -->
+  <div class="card" style="margin-bottom:20px">
+    <h2>Overview <span class="badge">50 / 30 / 20</span></h2>
+    <div class="summary-grid">
+      <div class="stat">
+        <div class="label">Monthly Income</div>
+        <div class="value" id="totalIncome">$0</div>
+        <div class="sub">After all income sources</div>
+      </div>
+      <div class="stat">
+        <div class="label">Total Expenses</div>
+        <div class="value" id="totalExpenses">$0</div>
+        <div class="sub" id="expensePct">0% of income</div>
+      </div>
+      <div class="stat">
+        <div class="label">Remaining</div>
+        <div class="value" id="remaining">$0</div>
+        <div class="sub" id="remainingNote">Unallocated</div>
+      </div>
+    </div>
+
+    <div style="margin-top:20px">
+      <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:4px">
+        <span class="pill-needs"><strong>Needs</strong> &mdash; target 50%</span>
+        <span id="needsInfo">$0 / $0</span>
+      </div>
+      <div class="progress"><div id="needsBar" style="background:var(--needs); width:0%"></div></div>
+
+      <div style="display:flex; justify-content:space-between; font-size:13px; margin:12px 0 4px">
+        <span class="pill-wants"><strong>Wants</strong> &mdash; target 30%</span>
+        <span id="wantsInfo">$0 / $0</span>
+      </div>
+      <div class="progress"><div id="wantsBar" style="background:var(--wants); width:0%"></div></div>
+
+      <div style="display:flex; justify-content:space-between; font-size:13px; margin:12px 0 4px">
+        <span class="pill-savings"><strong>Savings / Debt</strong> &mdash; target 20%</span>
+        <span id="savingsInfo">$0 / $0</span>
+      </div>
+      <div class="progress"><div id="savingsBar" style="background:var(--savings); width:0%"></div></div>
+    </div>
+
+    <details>
+      <summary>What is the 50/30/20 rule?</summary>
+      <p style="font-size:13px; color:var(--muted); margin-top:8px">
+        Spend about <strong>50%</strong> of after-tax income on <em>needs</em> (rent, utilities, groceries),
+        <strong>30%</strong> on <em>wants</em> (dining out, entertainment, subscriptions),
+        and put <strong>20%</strong> toward <em>savings</em> or paying down debt.
+      </p>
+    </details>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Income</h2>
+      <div id="incomeList"></div>
+      <button class="add-btn" id="addIncome">+ Add income source</button>
+    </div>
+
+    <div class="card">
+      <h2>Spending Breakdown</h2>
+      <div class="chart-wrap"><canvas id="pieChart"></canvas></div>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--needs)"></span>Needs</span>
+        <span><span class="dot" style="background:var(--wants)"></span>Wants</span>
+        <span><span class="dot" style="background:var(--savings)"></span>Savings</span>
+      </div>
+    </div>
+
+    <div class="card" style="grid-column: 1 / -1">
+      <h2>Expenses</h2>
+      <div id="expenseList"></div>
+      <button class="add-btn" id="addExpense">+ Add expense</button>
+    </div>
+
+    <div class="card" style="grid-column: 1 / -1">
+      <h2>Category Totals</h2>
+      <div class="chart-wrap" style="height:240px"><canvas id="barChart"></canvas></div>
+    </div>
+
+    <div class="card" style="grid-column: 1 / -1">
+      <h2>Savings Goals</h2>
+      <div id="goalList"></div>
+      <button class="add-btn" id="addGoal">+ Add savings goal</button>
+    </div>
+  </div>
+
+  <p class="footer-note">
+    Your data is saved automatically in this browser, one set per month.
+    Toggle <em>Recurring</em> on any line to carry it over when you open a new month.
+    Export CSV to keep a backup.
+  </p>
+</div>
+
+<script>
+  // ===== Theme-aware Chart.js defaults =====
+  const darkMode = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  Chart.defaults.color = darkMode ? "#cbd5e1" : "#475569";
+  Chart.defaults.borderColor = darkMode ? "#334155" : "#e5e7eb";
+
+  // ===== Helpers =====
+  function uid() { return Math.random().toString(36).slice(2, 10); }
+  function fmt(n) {
+    return new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', maximumFractionDigits: 0 }).format(n || 0);
+  }
+  function todayKey() {
+    const d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2, "0");
+  }
+  function monthLabel(key) {
+    if (!key) return "";
+    const parts = key.split("-").map(Number);
+    return new Date(parts[0], parts[1]-1, 1).toLocaleString(undefined, { month: "long", year: "numeric" });
+  }
+  function shiftMonth(key, delta) {
+    const parts = key.split("-").map(Number);
+    const d = new Date(parts[0], parts[1]-1 + delta, 1);
+    return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2, "0");
+  }
+
+  // ===== State =====
+  const STORAGE_KEY = "myBudgetPlannerV1";
+
+  function makeDefaultState() {
+    const key = todayKey();
+    return {
+      schemaVersion: 2,
+      currentMonth: key,
+      months: {
+        [key]: {
+          incomes: [{ id: uid(), label: "Salary", amount: 0, recurring: true }],
+          expenses: [
+            { id: uid(), label: "Rent",           category: "needs",   amount: 0, recurring: true  },
+            { id: uid(), label: "Groceries",      category: "needs",   amount: 0, recurring: true  },
+            { id: uid(), label: "Dining Out",     category: "wants",   amount: 0, recurring: false },
+            { id: uid(), label: "Emergency Fund", category: "savings", amount: 0, recurring: true  }
+          ]
+        }
+      },
+      goals: [{ id: uid(), label: "Emergency Fund", target: 5000, saved: 0 }]
+    };
+  }
+
+  function loadRaw() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)); }
+    catch (e) { return null; }
+  }
+
+  // Upgrade data saved by earlier versions (no months, no recurring flag).
+  function migrate(raw) {
+    if (!raw) return makeDefaultState();
+    if (raw.schemaVersion === 2 && raw.months) return raw;
+    if (raw.incomes || raw.expenses) {
+      const key = todayKey();
+      return {
+        schemaVersion: 2,
+        currentMonth: key,
+        months: {
+          [key]: {
+            incomes: (raw.incomes || []).map(function (i) { return Object.assign({}, i, { recurring: i.recurring !== false }); }),
+            expenses: (raw.expenses || []).map(function (e) { return Object.assign({}, e, { recurring: e.recurring !== false }); })
+          }
+        },
+        goals: raw.goals || []
+      };
+    }
+    return makeDefaultState();
+  }
+
+  let state = migrate(loadRaw());
+  let lastCarryInfo = null; // { month, from, count }
+
+  function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+  function sortedMonthKeys() { return Object.keys(state.months).sort(); }
+
+  // If the month doesn't exist, create it by copying recurring items from the most recent prior month.
+  function ensureMonth(key) {
+    if (state.months[key]) return null;
+    const priors = sortedMonthKeys().filter(function (k) { return k < key; });
+    const priorKey = priors.length ? priors[priors.length - 1] : null;
+    if (priorKey) {
+      const prior = state.months[priorKey];
+      const carriedIncomes = prior.incomes.filter(function (i) { return i.recurring; })
+        .map(function (i) { return Object.assign({}, i, { id: uid() }); });
+      const carriedExpenses = prior.expenses.filter(function (e) { return e.recurring; })
+        .map(function (e) { return Object.assign({}, e, { id: uid() }); });
+      state.months[key] = { incomes: carriedIncomes, expenses: carriedExpenses };
+      return { from: priorKey, count: carriedIncomes.length + carriedExpenses.length };
+    }
+    state.months[key] = { incomes: [], expenses: [] };
+    return { from: null, count: 0 };
+  }
+
+  function currentData() {
+    const carry = ensureMonth(state.currentMonth);
+    if (carry) lastCarryInfo = Object.assign({ month: state.currentMonth }, carry);
+    return state.months[state.currentMonth];
+  }
+
+  function switchToMonth(key) {
+    state.currentMonth = key;
+    lastCarryInfo = null;
+    const carry = ensureMonth(key);
+    if (carry) lastCarryInfo = Object.assign({ month: key }, carry);
+    save();
+    renderAll();
+  }
+
+  // ===== Renderers =====
+  function renderMonthNav() {
+    document.getElementById("monthPicker").value = state.currentMonth;
+    const note = document.getElementById("monthNote");
+    const data = state.months[state.currentMonth];
+    const totalItems = data.incomes.length + data.expenses.length;
+    if (lastCarryInfo && lastCarryInfo.month === state.currentMonth) {
+      if (lastCarryInfo.from) {
+        note.textContent = "New month \u2014 " + lastCarryInfo.count + " recurring item" +
+          (lastCarryInfo.count === 1 ? "" : "s") + " carried over from " + monthLabel(lastCarryInfo.from);
+      } else {
+        note.textContent = "New month \u2014 starting fresh";
+      }
+    } else {
+      note.textContent = totalItems + " item" + (totalItems === 1 ? "" : "s") +
+        " \u00b7 viewing " + monthLabel(state.currentMonth);
+    }
+  }
+
+  function renderIncome() {
+    const host = document.getElementById("incomeList");
+    host.innerHTML = "";
+    const data = currentData();
+    if (!data.incomes.length) {
+      host.innerHTML = '<div class="empty">No income sources yet.</div>';
+      return;
+    }
+    data.incomes.forEach(function (inc) {
+      if (inc.recurring === undefined) inc.recurring = true;
+      const row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML =
+        '<input type="text" placeholder="Source (e.g. Salary)" value="' + (inc.label || "") + '" />' +
+        '<input type="number" min="0" step="0.01" placeholder="Amount" value="' + (inc.amount || "") + '" />' +
+        '<button class="recurring-toggle ' + (inc.recurring ? 'active' : '') + '" title="Toggle whether this carries over to next month">Recurring</button>' +
+        '<button class="ghost" title="Remove">&#10005;</button>';
+      const labelIn = row.children[0], amtIn = row.children[1], recBtn = row.children[2], delBtn = row.children[3];
+      labelIn.addEventListener("input", function (e) { inc.label = e.target.value; save(); });
+      amtIn.addEventListener("input", function (e) { inc.amount = parseFloat(e.target.value) || 0; save(); refreshSummary(); });
+      recBtn.addEventListener("click", function () {
+        inc.recurring = !inc.recurring;
+        recBtn.classList.toggle("active", inc.recurring);
+        save();
+      });
+      delBtn.addEventListener("click", function () {
+        state.months[state.currentMonth].incomes = data.incomes.filter(function (x) { return x.id !== inc.id; });
+        save(); renderIncome(); refreshSummary();
+      });
+      host.appendChild(row);
+    });
+  }
+
+  function renderExpenses() {
+    const host = document.getElementById("expenseList");
+    host.innerHTML = "";
+    const data = currentData();
+    if (!data.expenses.length) {
+      host.innerHTML = '<div class="empty">No expenses yet.</div>';
+      return;
+    }
+    data.exp
