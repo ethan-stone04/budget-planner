@@ -911,8 +911,43 @@
   // Initialize button label on load (the attribute itself was set by the inline script in <head>).
   // Don't repaint here — renderAll() runs below and handles the first render.
   setTheme(getTheme(), false);
-  document.getElementById("themeBtn").addEventListener("click", function () {
-    setTheme(getTheme() === "blue-black" ? "classic" : "blue-black", true);
+  document.getElementById("themeBtn").addEventListener("click", function (e) {
+    const newTheme = getTheme() === "blue-black" ? "classic" : "blue-black";
+
+    // Grab the current background color from the live CSS variable before switching.
+    const oldBg = cssVar("--bg") || "#05070d";
+
+    // Find the center of the button to use as the ripple origin.
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.round(rect.left + rect.width  / 2);
+    const y = Math.round(rect.top  + rect.height / 2);
+
+    // Create a full-page overlay painted in the OLD theme's background.
+    // It starts fully covering the screen and will shrink to nothing at (x, y),
+    // revealing the new theme underneath as it contracts.
+    const overlay = document.createElement("div");
+    overlay.style.cssText = [
+      "position:fixed", "inset:0", "z-index:9999", "pointer-events:none",
+      "background:" + oldBg,
+      "clip-path:circle(150vmax at " + x + "px " + y + "px)",
+      "transition:clip-path 420ms cubic-bezier(0.4,0,0.2,1)"
+    ].join(";");
+    document.body.appendChild(overlay);
+
+    // Switch the real theme immediately — it renders beneath the overlay.
+    setTheme(newTheme, true);
+
+    // Two rAF calls ensure the browser has painted the overlay before we
+    // kick off the shrink animation (otherwise the transition is skipped).
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        overlay.style.clipPath = "circle(0vmax at " + x + "px " + y + "px)";
+      });
+    });
+
+    overlay.addEventListener("transitionend", function () {
+      overlay.remove();
+    }, { once: true });
   });
 
   // ===== Month navigation (arrow buttons + keyboard arrows) =====
